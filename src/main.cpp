@@ -481,6 +481,17 @@ void rec(int argc, char **argv)
       std::cout << t << "\t" << rec_text[t] << "\t" << rec_text_score[t] << std::endl;
     }
 
+    // Print the raw coordinates of the bounding boxes
+    for (int b = 0; b < boxes.size(); b++) {
+      std::cout << "The " << b << " box:" << std::endl;
+      for (int j = 0; j < 4; j++) {
+        for (int k = 0; k < 2; k++) {
+          std::cout << boxes[b][j][k] << "\t";
+        }
+      }
+      std::cout << std::endl;
+    }
+
     time_info[0] += times[0];
     time_info[1] += times[1];
     time_info[2] += times[2];
