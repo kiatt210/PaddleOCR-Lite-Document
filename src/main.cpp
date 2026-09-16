@@ -356,7 +356,13 @@ void system(int argc, char **argv) {
     auto img_vis = Visualization(srcimg, boxes);
 
     for (int i = 0; i < rec_text.size(); i++) {
-      std::cout << i << "\t" << rec_text[i] << "\t" << rec_text_score[i] <<  std::endl;
+      std::cout << i << "\t" << rec_text[i] << "\t" << rec_text_score[i] << "\n\t Box:";
+      for (int j = 0; j < 4; j++) {
+        for (int k = 0; k < 2; k++) {
+          std::cout << boxes[i][j][k] << "\t";
+        }
+      }
+      std::cout << std::endl;
     }
 
     det_time_info[0] += det_times[0];
@@ -479,17 +485,6 @@ void rec(int argc, char **argv)
     //// print recognized text
     for (int t = 0; t < rec_text.size(); t++) {
       std::cout << t << "\t" << rec_text[t] << "\t" << rec_text_score[t] << std::endl;
-    }
-
-    // Print the raw coordinates of the bounding boxes
-    for (int b = 0; b < boxes.size(); b++) {
-      std::cout << "The " << b << " box:" << std::endl;
-      for (int j = 0; j < 4; j++) {
-        for (int k = 0; k < 2; k++) {
-          std::cout << boxes[b][j][k] << "\t";
-        }
-      }
-      std::cout << std::endl;
     }
 
     time_info[0] += times[0];
