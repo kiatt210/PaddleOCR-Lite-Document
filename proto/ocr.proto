@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package ocr;
+
+service OcrService {
+    rpc recognize(ImageRequest) returns (OcrResponse);
+}
+
+message ImageRequest {
+    bytes image = 1;
+}
+
+message OcrResponse {
+    repeated TextResult results = 1;
+}
+
+message TextResult {
+    string text = 1;
+    float confidence = 2;
+    BoundingBox box = 3;
+}
+
+message BoundingBox {
+    int32 left = 1;
+    int32 top = 2;
+    int32 right = 3;
+    int32 bottom = 4;
+}
