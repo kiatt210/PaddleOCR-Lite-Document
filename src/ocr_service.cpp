@@ -1,4 +1,5 @@
 #include "ocr_service.h"
+#include "ocr.cpp"
 
 grpc::Status OcrServiceImpl::recognize(
     grpc::ServerContext* context,

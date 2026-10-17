@@ -138,3 +138,17 @@ rec_image_height  48       # The height of the input image of the recognition mo
 ```
 
 
+## Local
+``` bash
+docker run -it --rm -p 50051:50051 -v /home/kiatt/work/own/PaddleOCR-Lite-Document:/app ocr:dev bash
+mkdir build && \
+cd build && \
+cmake .. && \
+make  -j4 \
+../ocr-server
+```
+
+Install grpc client on host
+go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+
+~/go/bin/grpcurl -plaintext  -import-path .  -proto proto/ocr.proto -d "{\"image\":\"$(base64 -w 0 11.jpg)\"}"  localhost:50051 ocr.OcrService/recognize

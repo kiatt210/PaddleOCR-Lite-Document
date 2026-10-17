@@ -300,19 +300,16 @@ std::map<std::string, double> LoadConfigTxt(std::string config_path) {
   return dict;
 }
 
-void system(int argc, char **argv) {
-  std::string det_model_file = argv[1];
-  std::string rec_model_file = argv[2];
-  std::string cls_model_file = argv[3];
-  std::string precision = argv[4];
-  std::string num_threads = argv[5];
-  std::string batchsize = argv[6];
-  std::string img_dir = argv[7];
-  std::string det_config_path = argv[8];
-  std::string dict_path = argv[9];
+void system(std::string image_path_expr) {
+  std::string det_model_file = "./models/PP_OCRv5_mobile_det";
+  std::string rec_model_file = "./models/PP_OCRv5_mobile_rec";
+  std::string cls_model_file = "./models/cls-sim-op";
+  int num_threads = 4;
+  std::string det_config_path = "./models/config.txt";
+  std::string dict_path = "./models/PP_OCRv5_vocab.txt";
 
   std::vector<cv::String> cv_all_img_names;
-  cv::glob(img_dir, cv_all_img_names);
+  cv::glob(image_path_expr, cv_all_img_names);
 
   auto Config = LoadConfigTxt(det_config_path);
   int use_direction_classify = int(Config["use_direction_classify"]);
@@ -321,11 +318,11 @@ void system(int argc, char **argv) {
   charactor_dict.insert(charactor_dict.begin(), "#");
   charactor_dict.push_back(" ");
 
-  auto det_predictor = loadModel(det_model_file, std::stoi(num_threads));
-  auto rec_predictor = loadModel(rec_model_file, std::stoi(num_threads));
+  auto det_predictor = loadModel(det_model_file, num_threads);
+  auto rec_predictor = loadModel(rec_model_file, num_threads);
   ncnn::Net* cls_predictor = nullptr;
   if (use_direction_classify >= 1) {
-      cls_predictor = loadModel(cls_model_file, std::stoi(num_threads));
+      cls_predictor = loadModel(cls_model_file, num_threads);
   }
 
   std::vector<double> det_time_info = {0, 0, 0};
