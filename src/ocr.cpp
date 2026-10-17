@@ -15,6 +15,7 @@
 #include "db_post_process.h"
 
 using namespace std;
+const string runtime_device = "arm8";
 
 // resize image to a size multiple of 32 which is required by the network
 cv::Mat DetResizeImg(const cv::Mat img, int max_size_len, std::vector<float> &ratio_hw) {
@@ -299,25 +300,16 @@ std::map<std::string, double> LoadConfigTxt(std::string config_path) {
   return dict;
 }
 
-void check_params(int argc, char **argv) {
-  if (argc<=1 || (strcmp(argv[1], "det")!=0 && strcmp(argv[1], "rec")!=0 && strcmp(argv[1], "system")!=0)) {
-    std::cerr << "Please choose one mode of [det, rec, system] !" << std::endl;
-    exit(1);
-  }
-  // Parameter counts remain unchanged for backwards compatibility
-}
-
 void system(int argc, char **argv) {
-  std::string det_model_file = argv[2];
-  std::string rec_model_file = argv[3];
-  std::string cls_model_file = argv[4];
-  std::string runtime_device = argv[5];
-  std::string precision = argv[6];
-  std::string num_threads = argv[7];
-  std::string batchsize = argv[8];
-  std::string img_dir = argv[9];
-  std::string det_config_path = argv[10];
-  std::string dict_path = argv[11];
+  std::string det_model_file = argv[1];
+  std::string rec_model_file = argv[2];
+  std::string cls_model_file = argv[3];
+  std::string precision = argv[4];
+  std::string num_threads = argv[5];
+  std::string batchsize = argv[6];
+  std::string img_dir = argv[7];
+  std::string det_config_path = argv[8];
+  std::string dict_path = argv[9];
 
   std::vector<cv::String> cv_all_img_names;
   cv::glob(img_dir, cv_all_img_names);
@@ -373,135 +365,3 @@ void system(int argc, char **argv) {
     rec_time_info[2] += rec_times[2];
   }
 }
-
-void det(int argc, char **argv)
-{
-  std::string det_model_file = argv[2];
-  // argv[3], [4], [6] (device, precision, batchsize) are legacy Paddle arguments, ignored by NCNN
-  std::string num_threads = argv[5];
-  std::string img_dir = argv[7];
-  std::string det_config_path = argv[8];
-
-  std::vector<cv::String> cv_all_img_names;
-  cv::glob(img_dir, cv_all_img_names);
-
-  //// load config from txt file
-  auto Config = LoadConfigTxt(det_config_path);
-
-  // Load ONLY the detection model
-  auto det_predictor = loadModel(det_model_file, std::stoi(num_threads));
-
-  std::vector<double> time_info = {0, 0, 0};
-  for (int i = 0; i < cv_all_img_names.size(); ++i) {
-    std::cout << "The predict img: " << cv_all_img_names[i] << std::endl;
-    cv::Mat srcimg = cv::imread(cv_all_img_names[i], cv::IMREAD_COLOR);
-
-    if (!srcimg.data) {
-      std::cerr << "[ERROR] image read failed! image path: " << cv_all_img_names[i] << std::endl;
-      exit(1);
-    }
-
-    std::vector<double> times;
-
-    // Run Detection
-    auto boxes = RunDetModel(det_predictor, srcimg, Config, &times);
-
-    //// visualization
-    auto img_vis = Visualization(srcimg, boxes);
-
-    std::cout << boxes.size() << " bboxes have detected:" << std::endl;
-
-    // Print the raw coordinates of the bounding boxes
-    for (int b = 0; b < boxes.size(); b++) {
-      std::cout << "The " << b << " box:" << std::endl;
-      for (int j = 0; j < 4; j++) {
-        for (int k = 0; k < 2; k++) {
-          std::cout << boxes[b][j][k] << "\t";
-        }
-      }
-      std::cout << std::endl;
-    }
-
-    time_info[0] += times[0];
-    time_info[1] += times[1];
-    time_info[2] += times[2];
-  }
-}
-
-void rec(int argc, char **argv)
-{
-  std::string rec_model_file = argv[2];
-  // argv[3], [4], [6] (device, precision, batchsize) are legacy Paddle arguments, ignored by NCNN
-  std::string num_threads = argv[5];
-  std::string img_dir = argv[7];
-  std::string dict_path = argv[8];
-  std::string config_path = argv[9];
-
-  auto Config = LoadConfigTxt(config_path);
-  int rec_image_height = int(Config["rec_image_height"]);
-
-  std::vector<cv::String> cv_all_img_names;
-  cv::glob(img_dir, cv_all_img_names);
-
-  // Load the dictionary mapping
-  auto charactor_dict = ReadDict(dict_path);
-  charactor_dict.insert(charactor_dict.begin(), "#"); // blank char for ctc
-  charactor_dict.push_back(" ");
-
-  // Load ONLY the recognition model
-  auto rec_predictor = loadModel(rec_model_file, std::stoi(num_threads));
-
-  // Angle classifier is not used in raw recognition mode
-  ncnn::Net* cls_predictor = nullptr;
-
-  std::vector<double> time_info = {0, 0, 0};
-  for (int i = 0; i < cv_all_img_names.size(); ++i) {
-    std::cout << "The predict img: " << cv_all_img_names[i] << std::endl;
-    cv::Mat srcimg = cv::imread(cv_all_img_names[i], cv::IMREAD_COLOR);
-
-    if (!srcimg.data) {
-      std::cerr << "[ERROR] image read failed! image path: " << cv_all_img_names[i] << std::endl;
-      exit(1);
-    }
-
-    // CREATE A DUMMY BOUNDING BOX THE EXACT SIZE OF THE IMAGE
-    int width = srcimg.cols;
-    int height = srcimg.rows;
-    std::vector<int> upper_left = {0, 0};
-    std::vector<int> upper_right = {width, 0};
-    std::vector<int> lower_right = {width, height};
-    std::vector<int> lower_left  = {0, height};
-    std::vector<std::vector<int>> box = {upper_left, upper_right, lower_right, lower_left};
-    std::vector<std::vector<std::vector<int>>> boxes = {box};
-
-    std::vector<std::string> rec_text;
-    std::vector<float> rec_text_score;
-    std::vector<double> times;
-
-    // Run Recognition on the dummy box
-    RunRecModel(boxes, srcimg, rec_predictor, rec_text, rec_text_score,
-                charactor_dict, cls_predictor, 0, &times, rec_image_height);
-
-    //// print recognized text
-    for (int t = 0; t < rec_text.size(); t++) {
-      std::cout << t << "\t" << rec_text[t] << "\t" << rec_text_score[t] << std::endl;
-    }
-
-    time_info[0] += times[0];
-    time_info[1] += times[1];
-    time_info[2] += times[2];
-  }
-}
-
-int main(int argc, char **argv)
-{
-  check_params(argc, argv);
-  std::cout << "mode: " << argv[1] << endl;
-
-  if (strcmp(argv[1], "system") == 0) system(argc, argv);
-  if (strcmp(argv[1], "det") == 0) det(argc, argv);
-  if (strcmp(argv[1], "rec") == 0) rec(argc, argv);
-
-  return 0;
-}
-
