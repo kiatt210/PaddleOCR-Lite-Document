@@ -13,6 +13,7 @@
 #include "cls_process.h"
 #include "crnn_process.h"
 #include "db_post_process.h"
+#include "ocr.pb.h"
 
 using namespace std;
 const string runtime_device = "arm8";
@@ -254,24 +255,6 @@ ncnn::Net* loadModel(std::string model_file, int num_threads) {
   return net;
 }
 
-cv::Mat Visualization(cv::Mat srcimg, std::vector<std::vector<std::vector<int>>> boxes) {
-  cv::Mat img_vis;
-  srcimg.copyTo(img_vis);
-  for (int n = 0; n < boxes.size(); n++) {
-    std::vector<cv::Point> pts;
-    for (int m = 0; m < boxes[0].size(); m++) {
-      pts.push_back(cv::Point(boxes[n][m][0], boxes[n][m][1]));
-    }
-    const cv::Point* ppt[1] = { pts.data() };
-    int npt[] = { 4 };
-    cv::polylines(img_vis, ppt, npt, 1, 1, CV_RGB(0, 255, 0), 2, 8, 0);
-  }
-
-  cv::imwrite("./vis.jpg", img_vis);
-  std::cout << "The detection visualized image saved in ./vis.jpg" << std::endl;
-  return img_vis;
-}
-
 std::vector<std::string> split(const std::string &str, const std::string &delim) {
   std::vector<std::string> res;
   if ("" == str) return res;
@@ -300,13 +283,46 @@ std::map<std::string, double> LoadConfigTxt(std::string config_path) {
   return dict;
 }
 
-void system(std::string image_path_expr) {
-  std::string det_model_file = "./models/PP_OCRv5_mobile_det";
-  std::string rec_model_file = "./models/PP_OCRv5_mobile_rec";
-  std::string cls_model_file = "./models/cls-sim-op";
+void convertToBoundingBox(
+    const std::vector<std::vector<int>>& points, ocr::TextResult& result)
+{
+
+    if (points.empty())
+        return;
+
+    int left = points[0][0];
+    int right = points[0][0];
+    int top = points[0][1];
+    int bottom = points[0][1];
+
+    for (const auto& point : points)
+    {
+        if (point.size() < 2)
+            continue;
+
+        left = std::min(left, point[0]);
+        right = std::max(right, point[0]);
+        top = std::min(top, point[1]);
+        bottom = std::max(bottom, point[1]);
+    }
+
+    ocr::BoundingBox* box = result.mutable_box();
+    box->set_left(left);
+    box->set_top(top);
+    box->set_right(right);
+    box->set_bottom(bottom);
+
+}
+
+std::vector<ocr::TextResult> recognize_image(std::string image_path_expr) {
+  std::vector<ocr::TextResult> results;
+  std::cout << "Start recognize" << std::endl;
+  std::string det_model_file = "/app/models/PP_OCRv5_mobile_det";
+  std::string rec_model_file = "/app/models/PP_OCRv5_mobile_rec";
+  std::string cls_model_file = "/app/models/cls-sim-op";
   int num_threads = 4;
-  std::string det_config_path = "./models/config.txt";
-  std::string dict_path = "./models/PP_OCRv5_vocab.txt";
+  std::string det_config_path = "/app/models/config.txt";
+  std::string dict_path = "/app/models/PP_OCRv5_vocab.txt";
 
   std::vector<cv::String> cv_all_img_names;
   cv::glob(image_path_expr, cv_all_img_names);
@@ -342,16 +358,14 @@ void system(std::string image_path_expr) {
     RunRecModel(boxes, srcimg, rec_predictor, rec_text, rec_text_score,
                 charactor_dict, cls_predictor, use_direction_classify, &rec_times, rec_image_height);
 
-    auto img_vis = Visualization(srcimg, boxes);
 
     for (int i = 0; i < rec_text.size(); i++) {
-      std::cout << i << "\t" << rec_text[i] << "\t" << rec_text_score[i] << "\n\t Box:";
-      for (int j = 0; j < 4; j++) {
-        for (int k = 0; k < 2; k++) {
-          std::cout << boxes[i][j][k] << "\t";
-        }
-      }
-      std::cout << std::endl;
+      ocr::TextResult result;
+      result.set_text(rec_text[i]);
+      result.set_confidence(rec_text_score[i]);
+      convertToBoundingBox(boxes[i],result);
+  
+      results.push_back(result);
     }
 
     det_time_info[0] += det_times[0];
@@ -360,5 +374,7 @@ void system(std::string image_path_expr) {
     rec_time_info[0] += rec_times[0];
     rec_time_info[1] += rec_times[1];
     rec_time_info[2] += rec_times[2];
+
   }
+  return results;
 }

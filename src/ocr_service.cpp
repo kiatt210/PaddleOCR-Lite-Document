@@ -1,5 +1,7 @@
 #include "ocr_service.h"
-#include "ocr.cpp"
+#include "ocr.pb.h"
+
+std::vector<ocr::TextResult> recognize_image(std::string image_path_expr);
 
 grpc::Status OcrServiceImpl::recognize(
     grpc::ServerContext* context,
@@ -7,20 +9,13 @@ grpc::Status OcrServiceImpl::recognize(
     ocr::OcrResponse* response) {
 
     const std::string& image = request->image();
-
+    std::cout << "Start recognize" << std::endl;
     // TODO: Call your existing OCR implementation here.
-
-    auto* result = response->add_results();
-
-    result->set_text("Hello from OCR");
-    result->set_confidence(0.98);
-
-    auto* box = result->mutable_box();
-
-    box->set_left(100);
-    box->set_top(200);
-    box->set_right(300);
-    box->set_bottom(250);
+    auto recognize_result = recognize_image("/app/WillekePass.jpg");
+    for (const auto& result : recognize_result)
+    {
+    response->add_results()->CopyFrom(result);
+    }
 
     return grpc::Status::OK;
 }
