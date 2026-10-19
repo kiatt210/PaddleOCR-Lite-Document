@@ -10,12 +10,31 @@ grpc::Status OcrServiceImpl::recognize(
 
     const std::string& image = request->image();
     std::cout << "Start recognize" << std::endl;
-    // TODO: Call your existing OCR implementation here.
-    auto recognize_result = recognize_image("/app/WillekePass.jpg");
-    for (const auto& result : recognize_result)
+    
+     try
     {
-    response->add_results()->CopyFrom(result);
-    }
+       auto recognize_result = recognize_image("/app/WillekePass.jpg");
+       for (const auto& result : recognize_result)
+       {
+           response->add_results()->CopyFrom(result);
+       }
 
-    return grpc::Status::OK;
+       return grpc::Status::OK;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "OCR exception: " << e.what() << std::endl;
+
+        return grpc::Status(
+            grpc::StatusCode::INTERNAL,
+            "OCR processing failed");
+    }
+    catch (...)
+    {
+        std::cerr << "OCR exception: unknown exception" << std::endl;
+
+        return grpc::Status(
+            grpc::StatusCode::INTERNAL,
+            "Unexpected OCR processing error");
+    }
 }
