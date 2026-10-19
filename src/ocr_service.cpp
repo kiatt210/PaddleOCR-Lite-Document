@@ -1,5 +1,7 @@
 #include "ocr_service.h"
 #include "ocr.pb.h"
+#include <iostream>
+#include <exception>
 
 std::vector<ocr::TextResult> recognize_image(std::string image_path_expr);
 
@@ -14,11 +16,12 @@ grpc::Status OcrServiceImpl::recognize(
      try
     {
        auto recognize_result = recognize_image("/app/WillekePass.jpg");
+       std::cerr << "[DEBUG] After OCR" << std::endl;
        for (const auto& result : recognize_result)
        {
            response->add_results()->CopyFrom(result);
        }
-
+       std::cerr << "[DEBUG] After create result" << std::endl;
        return grpc::Status::OK;
     }
     catch (const std::exception& e)
