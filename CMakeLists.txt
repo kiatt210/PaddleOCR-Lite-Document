@@ -23,7 +23,7 @@ protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ${PROTO_FILE})
 set(GRPC_SRCS ${CMAKE_CURRENT_BINARY_DIR}/ocr.grpc.pb.cc)
 set(GRPC_HDRS ${CMAKE_CURRENT_BINARY_DIR}/ocr.grpc.pb.h)
 
-set(SOURCES src/clipper.cpp src/cls_process.cc src/crnn_process.cc src/db_post_process.cc src/main.cpp src/ocr.cpp)
+set(SOURCES src/utils/file_utils.cpp src/clipper.cpp src/cls_process.cc src/crnn_process.cc src/db_post_process.cc src/main.cpp src/ocr.cpp)
 
 set(EXTRA_LIBS ${OpenCV_LIBS} /usr/local/lib/ncnn/libncnn.a)
 

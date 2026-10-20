@@ -1,5 +1,6 @@
 #include "ocr_service.h"
 #include "ocr.pb.h"
+#include "utils/file_utils.h"
 #include <iostream>
 #include <exception>
 
@@ -10,12 +11,25 @@ grpc::Status OcrServiceImpl::recognize(
     const ocr::ImageRequest* request,
     ocr::OcrResponse* response) {
 
-    const std::string& image = request->image();
     std::cout << "Start recognize" << std::endl;
     
      try
     {
-       auto recognize_result = recognize_image("/app/WillekePass.jpg");
+       const std::string& image = request->image();
+
+       if (image.empty()) {
+           return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,"Image data is empty");
+       }
+
+       const std::filesystem::path output_path = "/tmp/uploaded_image.jpg";
+
+       const auto result = utils::write_binary_file(output_path, image);
+
+       if (!result) {
+           // Log result.error and result.system_error on the server.
+	   return grpc::Status( grpc::StatusCode::INTERNAL,"Failed to save image");
+       }
+       auto recognize_result = recognize_image(output_path);
        std::cerr << "[DEBUG] After OCR" << std::endl;
        for (const auto& result : recognize_result)
        {
