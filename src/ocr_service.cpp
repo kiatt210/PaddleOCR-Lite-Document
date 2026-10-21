@@ -1,10 +1,9 @@
 #include "ocr_service.h"
 #include "ocr.pb.h"
+#include "ocr.h"
 #include "utils/file_utils.h"
 #include <iostream>
 #include <exception>
-
-std::vector<ocr::TextResult> recognize_image(std::string image_path_expr);
 
 grpc::Status OcrServiceImpl::recognize(
     grpc::ServerContext* context,
@@ -29,7 +28,7 @@ grpc::Status OcrServiceImpl::recognize(
            // Log result.error and result.system_error on the server.
 	   return grpc::Status( grpc::StatusCode::INTERNAL,"Failed to save image");
        }
-       auto recognize_result = recognize_image(output_path);
+       auto recognize_result = recognize_image(output_path.string());
        std::cerr << "[DEBUG] After OCR" << std::endl;
        for (const auto& result : recognize_result)
        {

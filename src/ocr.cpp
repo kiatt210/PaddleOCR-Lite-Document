@@ -13,6 +13,9 @@
 #include "cls_process.h"
 #include "crnn_process.h"
 #include "db_post_process.h"
+#include <memory>
+#include <stdexcept>
+#include <sstream>
 #include "ocr.pb.h"
 
 using namespace std;
@@ -240,46 +243,53 @@ std::vector<std::vector<std::vector<int>>> RunDetModel(ncnn::Net* predictor, cv:
   return filter_boxes;
 }
 
-ncnn::Net* loadModel(std::string model_file, int num_threads) {
-  ncnn::Net* net = new ncnn::Net();
+ncnn::Net* loadModel(const std::string& model_file, int num_threads) {
+  auto net = std::make_unique<ncnn::Net>();
   net->opt.use_vulkan_compute = false;
   net->opt.use_fp16_arithmetic = true; // HUGE speedup on Pi
   net->opt.num_threads = num_threads;
 
-  // Assume the user passes the prefix without extensions, e.g. "models/PP_OCRv5_mobile_det"
   if (net->load_param((model_file + ".param").c_str()) != 0 ||
       net->load_model((model_file + ".bin").c_str()) != 0) {
-      std::cerr << "[ERROR] NCNN load failed for: " << model_file << std::endl;
-      exit(1);
+      throw std::runtime_error("NCNN model loading failed: " + model_file);
   }
-  return net;
+  return net.release();
 }
 
 std::vector<std::string> split(const std::string &str, const std::string &delim) {
   std::vector<std::string> res;
-  if ("" == str) return res;
-  char *strs = new char[str.length() + 1];
-  std::strcpy(strs, str.c_str());
-
-  char *d = new char[delim.length() + 1];
-  std::strcpy(d, delim.c_str());
-
-  char *p = std::strtok(strs, d);
-  while (p) {
-    string s = p;
-    res.push_back(s);
-    p = std::strtok(NULL, d);
+  if (str.empty() || delim.empty()) {
+    return res;
   }
+
+  std::size_t start = 0;
+  while (start < str.size()) {
+    const auto end = str.find(delim, start);
+    if (end == std::string::npos) {
+      res.push_back(str.substr(start));
+      break;
+    }
+
+    res.push_back(str.substr(start, end - start));
+    start = end + delim.size();
+  }
+
   return res;
 }
 
 std::map<std::string, double> LoadConfigTxt(std::string config_path) {
   auto config = ReadDict(config_path);
   std::map<std::string, double> dict;
-  for (int i = 0; i < config.size(); i++) {
-    std::vector<std::string> res = split(config[i], " ");
-    dict[res[0]] = stod(res[1]);
+  for (const auto& line : config) {
+    std::istringstream stream(line);
+    std::string key;
+    double value;
+
+    if (stream >> key >> value) {
+      dict[key] = value;
+    }
   }
+
   return dict;
 }
 
@@ -332,67 +342,92 @@ void convertToBoundingBox(
 
 }
 
-std::vector<ocr::TextResult> recognize_image(std::string image_path_expr) {
-  std::vector<ocr::TextResult> results;
-  std::cout << "Start recognize" << std::endl;
-  std::string det_model_file = "/app/models/PP_OCRv5_mobile_det";
-  std::string rec_model_file = "/app/models/PP_OCRv5_mobile_rec";
-  std::string cls_model_file = "/app/models/cls-sim-op";
-  int num_threads = 4;
-  std::string det_config_path = "/app/models/config.txt";
-  std::string dict_path = "/app/models/PP_OCRv5_vocab.txt";
+class OcrEngine {
+public:
+  OcrEngine()
+      : config_(LoadConfigTxt("/app/models/config.txt")),
+        use_direction_classify_(
+            static_cast<int>(config_["use_direction_classify"])),
+        rec_image_height_(
+            static_cast<int>(config_["rec_image_height"])),
+        det_predictor_(
+            loadModel("/app/models/PP_OCRv5_mobile_det", 4)),
+        rec_predictor_(
+            loadModel("/app/models/PP_OCRv5_mobile_rec", 4)) {
+    charactor_dict_ = ReadDict("/app/models/PP_OCRv5_vocab.txt");
+    charactor_dict_.insert(charactor_dict_.begin(), "#");
+    charactor_dict_.push_back(" ");
 
-  std::vector<cv::String> cv_all_img_names;
-  cv::glob(image_path_expr, cv_all_img_names);
-
-  auto Config = LoadConfigTxt(det_config_path);
-  int use_direction_classify = int(Config["use_direction_classify"]);
-  int rec_image_height = int(Config["rec_image_height"]);
-  auto charactor_dict = ReadDict(dict_path);
-  charactor_dict.insert(charactor_dict.begin(), "#");
-  charactor_dict.push_back(" ");
-
-  auto det_predictor = loadModel(det_model_file, num_threads);
-  auto rec_predictor = loadModel(rec_model_file, num_threads);
-  ncnn::Net* cls_predictor = nullptr;
-  if (use_direction_classify >= 1) {
-      cls_predictor = loadModel(cls_model_file, num_threads);
+    if (use_direction_classify_ >= 1) {
+      cls_predictor_.reset(
+          loadModel("/app/models/cls-sim-op", 4));
+    }
   }
 
-  std::vector<double> det_time_info = {0, 0, 0};
-  std::vector<double> rec_time_info = {0, 0, 0};
+  std::vector<ocr::TextResult> recognize(
+      const std::string& image_path_expr) {
+    std::vector<ocr::TextResult> results;
+    std::vector<cv::String> cv_all_img_names;
+    cv::glob(image_path_expr, cv_all_img_names);
 
-  for (int i = 0; i < cv_all_img_names.size(); ++i) {
-    std::cout << "The predict img: " << cv_all_img_names[i] << std::endl;
-    cv::Mat srcimg = cv::imread(cv_all_img_names[i], cv::IMREAD_COLOR);
+    std::vector<double> det_time_info = {0, 0, 0};
+    std::vector<double> rec_time_info = {0, 0, 0};
+    for (const auto& image_name : cv_all_img_names) {
+      cv::Mat srcimg = cv::imread(image_name, cv::IMREAD_COLOR);
+      if (srcimg.empty()) {
+        continue;
+      }
 
     std::vector<double> det_times;
-    auto boxes = RunDetModel(det_predictor, srcimg, Config, &det_times);
-
-    std::vector<std::string> rec_text;
-    std::vector<float> rec_text_score;
-    std::vector<double> rec_times;
-
-    RunRecModel(boxes, srcimg, rec_predictor, rec_text, rec_text_score,
-                charactor_dict, cls_predictor, use_direction_classify, &rec_times, rec_image_height);
+      auto boxes = RunDetModel(
+          det_predictor_.get(), srcimg, config_, &det_times);
+ 
+      std::vector<std::string> rec_text;
+      std::vector<float> rec_text_score;
+      std::vector<double> rec_times;
 
 
-    for (int i = 0; i < rec_text.size(); i++) {
-      ocr::TextResult result;
-      result.set_text(rec_text[i]);
-      result.set_confidence(rec_text_score[i]);
-      convertToBoundingBox(boxes[i],result);
+      RunRecModel(
+          boxes,
+          srcimg,
+          rec_predictor_.get(),
+          rec_text,
+          rec_text_score,
+          charactor_dict_,
+          cls_predictor_.get(),
+          use_direction_classify_,
+          &rec_times,
+          rec_image_height_);
   
-      results.push_back(result);
+      for (std::size_t i = 0; i < rec_text.size(); ++i) {
+        ocr::TextResult result;
+        result.set_text(rec_text[i]);
+        result.set_confidence(rec_text_score[i]);
+        convertToBoundingBox(boxes[i], result);
+        results.push_back(result);
+      }
+
+      for (std::size_t i = 0; i < 3; ++i) {
+        det_time_info[i] += det_times[i];
+        rec_time_info[i] += rec_times[i];
+      }
     }
 
-    det_time_info[0] += det_times[0];
-    det_time_info[1] += det_times[1];
-    det_time_info[2] += det_times[2];
-    rec_time_info[0] += rec_times[0];
-    rec_time_info[1] += rec_times[1];
-    rec_time_info[2] += rec_times[2];
-
+    return results;
   }
-  return results;
+
+private:
+  std::map<std::string, double> config_;
+  int use_direction_classify_;
+  int rec_image_height_;
+  std::vector<std::string> charactor_dict_;
+  std::unique_ptr<ncnn::Net> det_predictor_;
+  std::unique_ptr<ncnn::Net> rec_predictor_;
+  std::unique_ptr<ncnn::Net> cls_predictor_;
+};
+
+std::vector<ocr::TextResult> recognize_image(
+    const std::string& image_path_expr) {
+  static OcrEngine engine;
+  return engine.recognize(image_path_expr);
 }
