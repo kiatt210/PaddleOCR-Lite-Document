@@ -106,7 +106,7 @@ void RunRecModel(std::vector<std::vector<std::vector<int>>> boxes, cv::Mat img,
   const float mean_vals[3] = {0.5f * 255.f, 0.5f * 255.f, 0.5f * 255.f};
   const float norm_vals[3] = {1 / 0.5f / 255.f, 1 / 0.5f / 255.f, 1 / 0.5f / 255.f};
 
-  for (int i = boxes.size() - 1; i >= 0; i--) {
+  for (int i = 0; i < boxes.size(); i++) {
     auto preprocess_start = std::chrono::steady_clock::now();
     crop_img = GetRotateCropImage(srcimg, boxes[i]);
     if (use_direction_classify >= 1 && predictor_cls != nullptr) {
@@ -283,6 +283,24 @@ std::map<std::string, double> LoadConfigTxt(std::string config_path) {
   return dict;
 }
 
+cv::Mat Visualization(cv::Mat srcimg, std::vector<std::vector<std::vector<int>>> boxes) {
+  cv::Mat img_vis;
+  srcimg.copyTo(img_vis);
+  for (int n = 0; n < boxes.size(); n++) {
+    std::vector<cv::Point> pts;
+    for (int m = 0; m < boxes[0].size(); m++) {
+      pts.push_back(cv::Point(boxes[n][m][0], boxes[n][m][1]));
+    }
+    const cv::Point* ppt[1] = { pts.data() };
+    int npt[] = { 4 };
+    cv::polylines(img_vis, ppt, npt, 1, 1, CV_RGB(0, 255, 0), 2, 8, 0);
+  }
+
+  cv::imwrite("./vis.jpg", img_vis);
+  std::cout << "The detection visualized image saved in ./vis.jpg" << std::endl;
+  return img_vis;
+}
+
 void convertToBoundingBox(
     const std::vector<std::vector<int>>& points, ocr::TextResult& result)
 {
@@ -302,8 +320,8 @@ void convertToBoundingBox(
 
         left = std::min(left, point[0]);
         right = std::max(right, point[0]);
-        top = std::min(top, point[1]);
-        bottom = std::max(bottom, point[1]);
+        top = std::max(top, point[1]);
+        bottom = std::min(bottom, point[1]);
     }
 
     ocr::BoundingBox* box = result.mutable_box();
